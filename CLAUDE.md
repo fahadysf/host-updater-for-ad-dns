@@ -16,6 +16,7 @@ dns.go            - DNS server liveness checks and record lookups
 ip_discovery.go   - Local network interface IP address discovery
 winrm.go          - Windows Remote Management for DNS record updates (Kerberos/HTTPS)
 logger.go         - Debug logging infrastructure
+output.go         - Interactive progress display and output formatting (pretty/json/yaml)
 ```
 
 ## CLI Usage
@@ -42,7 +43,14 @@ logger.go         - Debug logging infrastructure
 | `--ad-user` | AD username (UPN format: user@domain or DOMAIN\user) |
 | `--ad-password` | AD password (prompted if not provided) |
 | `--ip` | Manual IPv4 address (skips auto-detection) |
+| `-o` | Output format: `pretty` (default), `json`, or `yaml` |
 | `--debug` | Enable debug logging |
+
+### Output Formats
+
+- **pretty** (default): Interactive CLI output with Unicode progress indicators (✓/✗) and spinners
+- **json**: Structured JSON output for programmatic consumption
+- **yaml**: Structured YAML output for configuration/scripting use
 
 ## Authentication
 
@@ -94,7 +102,8 @@ GOOS=darwin GOARCH=arm64 go build -o dns-updater-darwin-arm64 .
 
 - `github.com/masterzen/winrm` - WinRM client with Kerberos support
 - `github.com/jcmturner/gokrb5/v8` - Kerberos authentication
-- `golang.org/x/term` - Secure password input
+- `golang.org/x/term` - Secure password input and terminal detection
+- `gopkg.in/yaml.v3` - YAML output formatting
 
 ## Issues Fixed
 

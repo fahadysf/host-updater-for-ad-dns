@@ -5,6 +5,7 @@ go 1.25.5
 require (
 	github.com/masterzen/winrm v0.0.0-20250927112105-5f8e6c707321
 	golang.org/x/term v0.38.0
+	gopkg.in/yaml.v3 v3.0.1
 )
 
 require (
