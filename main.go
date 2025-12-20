@@ -46,7 +46,8 @@ func main() {
 	updateDNS := flag.Bool("update-dns", false, "Enable DNS update functionality.")
 	adUser := flag.String("ad-user", "", "Active Directory username for DNS update.")
 	adPassword := flag.String("ad-password", "", "Active Directory password for DNS update. If not provided, will be prompted.")
-	manualIP := flag.String("ip", "", "Manual IPv4 address to check/update. Skips auto-detection.")
+	manualIP := flag.String("ip", "", "Manual IPv4 address to check/update. Skips IPv4 auto-detection.")
+	manualIPv6 := flag.String("ipv6", "", "Manual IPv6 address to check/update. Skips IPv6 auto-detection.")
 	debug := flag.Bool("debug", false, "Enable debug logging.")
 	outputFormat := flag.String("o", OutputPretty, "Output format: pretty (default), json, or yaml.")
 
@@ -132,9 +133,43 @@ func main() {
 	// Determine IPs to check
 	progress.StartStep(stepDiscover, "detecting network interfaces...")
 	var sourceIPs IPAddrs
-	if *manualIP != "" {
-		sourceIPs.IPV4 = *manualIP
-		progress.CompleteStep(stepDiscover, StepSuccess, "using manual IP", sourceIPs.IPV4)
+
+	// Check if manual IPs are provided
+	if *manualIP != "" || *manualIPv6 != "" {
+		if *manualIP != "" {
+			sourceIPs.IPV4 = *manualIP
+		}
+		if *manualIPv6 != "" {
+			sourceIPs.IPV6 = *manualIPv6
+		}
+
+		// Only auto-detect if not manually specified
+		if sourceIPs.IPV4 == "" || sourceIPs.IPV6 == "" {
+			autoDetected, err := getDefaultInterfaceAddresses()
+			if err != nil && sourceIPs.IPV4 == "" {
+				progress.CompleteStep(stepDiscover, StepFailure, "failed", err.Error())
+				progress.Stop()
+				os.Exit(1)
+			}
+			if sourceIPs.IPV4 == "" {
+				sourceIPs.IPV4 = autoDetected.IPV4
+			}
+			if sourceIPs.IPV6 == "" {
+				sourceIPs.IPV6 = autoDetected.IPV6
+			}
+		}
+
+		ipInfo := ""
+		if sourceIPs.IPV4 != "" {
+			ipInfo = sourceIPs.IPV4
+		}
+		if sourceIPs.IPV6 != "" {
+			if ipInfo != "" {
+				ipInfo += ", "
+			}
+			ipInfo += sourceIPs.IPV6
+		}
+		progress.CompleteStep(stepDiscover, StepSuccess, "using manual IP", ipInfo)
 	} else {
 		var err error
 		sourceIPs, err = getDefaultInterfaceAddresses()

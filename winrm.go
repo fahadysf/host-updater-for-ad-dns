@@ -164,9 +164,53 @@ try {
 	debugLog.Printf("WinRM stdout:\n%s\n", stdOut.String())
 	debugLog.Printf("WinRM stderr:\n%s\n", stdErr.String())
 
-	if err != nil {
-		return UpdateResult{Status: "error", Message: stdErr.String()}, err
+	// Parse the output to create human-readable messages
+	stdOutStr := strings.TrimSpace(stdOut.String())
+	stdErrStr := strings.TrimSpace(stdErr.String())
+
+	// First, check for success indicators in stdout
+	// This takes priority over error checking because PowerShell may write to stderr
+	// even on successful operations (verbose output, warnings, etc.)
+	hasSuccessIndicator := false
+	var message string
+
+	if strings.Contains(stdOutStr, "already exists with the correct IP") {
+		hasSuccessIndicator = true
+		message = "Record already exists"
+	} else if strings.Contains(stdOutStr, "Created new A record for") {
+		hasSuccessIndicator = true
+		message = "Record created successfully"
+	} else if strings.Contains(stdOutStr, "Created new AAAA record for") {
+		hasSuccessIndicator = true
+		message = "Record created successfully"
+	} else if strings.Contains(stdOutStr, "Created new") {
+		hasSuccessIndicator = true
+		message = "Record created successfully"
 	}
 
-	return UpdateResult{Status: "success", Message: stdOut.String()}, nil
+	// If we found success indicators, return success regardless of stderr
+	if hasSuccessIndicator {
+		return UpdateResult{Status: "success", Message: message}, nil
+	}
+
+	// If no success indicators, check for errors
+	if err != nil || stdErrStr != "" {
+		// Extract error message from stderr
+		errMsg := "Failed to update DNS record"
+		if stdErrStr != "" {
+			// Try to extract meaningful error from PowerShell error output
+			lines := strings.Split(stdErrStr, "\n")
+			for _, line := range lines {
+				line = strings.TrimSpace(line)
+				if line != "" && !strings.HasPrefix(line, "At line:") && !strings.HasPrefix(line, "+") && !strings.HasPrefix(line, "CategoryInfo") && !strings.HasPrefix(line, "FullyQualifiedErrorId") {
+					errMsg = line
+					break
+				}
+			}
+		}
+		return UpdateResult{Status: "error", Message: errMsg}, err
+	}
+
+	// Fallback for unexpected success case (no error, no known success message)
+	return UpdateResult{Status: "success", Message: "Record updated successfully"}, nil
 }
