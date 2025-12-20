@@ -1,0 +1,37 @@
+# Binaries
+dns-updater
+dns-updater.exe
+dns-updater-linux
+dns-updater-darwin
+dns-updater-darwin-arm64
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Test binary
+*.test
+
+# Output of go coverage
+*.out
+
+# Go workspace
+go.work
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Temporary files
+*.tmp
+*.log
+
+# Claude Code local settings
+.claude/
