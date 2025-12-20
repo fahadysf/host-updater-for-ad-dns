@@ -1,9 +1,7 @@
 # Binaries
 dns-updater
-dns-updater.exe
-dns-updater-linux
-dns-updater-darwin
-dns-updater-darwin-arm64
+dns-updater-*
+test_*
 *.exe
 *.exe~
 *.dll
@@ -32,6 +30,34 @@ Thumbs.db
 # Temporary files
 *.tmp
 *.log
+
+# Sensitive files - credentials and secrets
+*.key
+*.pem
+*.p12
+*.pfx
+*.crt
+*.cer
+id_rsa*
+id_dsa*
+id_ecdsa*
+id_ed25519*
+.env
+.env.*
+!.env.example
+credentials.json
+secrets.yaml
+secrets.yml
+config.local.*
+
+# Kerberos configuration (contains realm/domain info)
+krb5.conf
+dns-updater-krb5.conf
+
+# Password/credential files
+passwords.txt
+*.password
+*.credentials
 
 # Claude Code local settings
 .claude/
