@@ -7,15 +7,15 @@ LDFLAGS="-X main.Version=${VERSION}"
 
 echo "==> Building ${BINARY_NAME} v${VERSION}"
 
-# Build all platform binaries
+# Build all platform binaries using {name}-{GOOS}-{GOARCH} naming convention
 echo "  Building windows/amd64..."
-GOOS=windows GOARCH=amd64 go build -ldflags "${LDFLAGS}" -o "${BINARY_NAME}.exe" .
+GOOS=windows GOARCH=amd64 go build -ldflags "${LDFLAGS}" -o "${BINARY_NAME}-windows-amd64.exe" .
 
 echo "  Building linux/amd64..."
-GOOS=linux GOARCH=amd64 go build -ldflags "${LDFLAGS}" -o "${BINARY_NAME}-linux" .
+GOOS=linux GOARCH=amd64 go build -ldflags "${LDFLAGS}" -o "${BINARY_NAME}-linux-amd64" .
 
 echo "  Building darwin/amd64..."
-GOOS=darwin GOARCH=amd64 go build -ldflags "${LDFLAGS}" -o "${BINARY_NAME}-darwin" .
+GOOS=darwin GOARCH=amd64 go build -ldflags "${LDFLAGS}" -o "${BINARY_NAME}-darwin-amd64" .
 
 echo "  Building darwin/arm64..."
 GOOS=darwin GOARCH=arm64 go build -ldflags "${LDFLAGS}" -o "${BINARY_NAME}-darwin-arm64" .
@@ -35,9 +35,9 @@ hash_file() {
 }
 
 rm -f checksums.txt
-echo "$(hash_file "${BINARY_NAME}.exe")  ${BINARY_NAME}-windows-amd64.exe" >> checksums.txt
-echo "$(hash_file "${BINARY_NAME}-linux")  ${BINARY_NAME}-linux-amd64" >> checksums.txt
-echo "$(hash_file "${BINARY_NAME}-darwin")  ${BINARY_NAME}-darwin-amd64" >> checksums.txt
+echo "$(hash_file "${BINARY_NAME}-windows-amd64.exe")  ${BINARY_NAME}-windows-amd64.exe" >> checksums.txt
+echo "$(hash_file "${BINARY_NAME}-linux-amd64")  ${BINARY_NAME}-linux-amd64" >> checksums.txt
+echo "$(hash_file "${BINARY_NAME}-darwin-amd64")  ${BINARY_NAME}-darwin-amd64" >> checksums.txt
 echo "$(hash_file "${BINARY_NAME}-darwin-arm64")  ${BINARY_NAME}-darwin-arm64" >> checksums.txt
 
 echo "==> Checksums written to checksums.txt"
@@ -66,10 +66,10 @@ fi
 gh release create "v${VERSION}" \
     --title "v${VERSION}" \
     --notes "${NOTES}" \
-    "${BINARY_NAME}.exe#${BINARY_NAME}-windows-amd64.exe" \
-    "${BINARY_NAME}-linux#${BINARY_NAME}-linux-amd64" \
-    "${BINARY_NAME}-darwin#${BINARY_NAME}-darwin-amd64" \
-    "${BINARY_NAME}-darwin-arm64#${BINARY_NAME}-darwin-arm64" \
+    "${BINARY_NAME}-windows-amd64.exe" \
+    "${BINARY_NAME}-linux-amd64" \
+    "${BINARY_NAME}-darwin-amd64" \
+    "${BINARY_NAME}-darwin-arm64" \
     "checksums.txt#checksums.txt"
 
 echo "==> Release v${VERSION} published"

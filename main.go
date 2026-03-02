@@ -52,7 +52,7 @@ func main() {
 	debug := flag.Bool("debug", false, "Enable debug logging.")
 	outputFormat := flag.String("o", OutputPretty, "Output format: pretty (default), json, or yaml.")
 	showVersion := flag.Bool("version", false, "Show version and exit.")
-	autoUpdate := flag.Bool("auto-update", false, "Check for and install updates after execution.")
+	autoUpdate := flag.Bool("auto-update", false, "Check for and install updates. Can be used standalone or after DNS operations.")
 
 	flag.Parse()
 
@@ -67,10 +67,16 @@ func main() {
 		os.Exit(1)
 	}
 
+	initLogger(*debug)
+
+	// Standalone auto-update: if --auto-update is provided without --domain/--nameservers, just update and exit
+	if *autoUpdate && *domain == "" && *nameservers == "" {
+		selfUpdate(*outputFormat)
+		os.Exit(0)
+	}
+
 	// Initialize progress display
 	progress := NewProgressDisplay(*outputFormat)
-
-	initLogger(*debug)
 
 	// Validate required flags
 	if *domain == "" || *nameservers == "" {
