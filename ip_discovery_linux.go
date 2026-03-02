@@ -77,44 +77,30 @@ func getDefaultInterfaceAddressesLinux() (IPAddrs, error) {
 		}
 	}
 
-	// Get IPv6 address from the interface with default route
+	// Get IPv6 addresses from the interface with default route
+	// Use netlink to get address flags so we can skip deprecated addresses
 	if ipv6Iface != nil {
-		addrsList, err := ipv6Iface.Addrs()
-		if err == nil {
-			// Collect all global unicast IPv6 addresses
-			var candidates []net.IP
-			for _, addr := range addrsList {
-				var ip net.IP
-				switch v := addr.(type) {
-				case *net.IPNet:
-					ip = v.IP
-				case *net.IPAddr:
-					ip = v.IP
-				}
-
-				if ip != nil && ip.To4() == nil && !ip.IsLoopback() {
-					// Check if it's a global unicast address (excludes link-local fe80::/10)
-					if ip.IsGlobalUnicast() {
-						candidates = append(candidates, ip)
+		link, err := netlink.LinkByIndex(ipv6Iface.Index)
+		if err != nil {
+			debugLog.Printf("Error getting link for %s: %v\n", ipv6Iface.Name, err)
+		} else {
+			nlAddrs, err := netlink.AddrList(link, netlink.FAMILY_V6)
+			if err != nil {
+				debugLog.Printf("Error listing IPv6 addrs on %s: %v\n", ipv6Iface.Name, err)
+			} else {
+				for _, nlAddr := range nlAddrs {
+					ip := nlAddr.IP
+					if ip == nil || ip.To4() != nil || !ip.IsGlobalUnicast() {
+						continue
 					}
+					// Skip deprecated addresses (preferred lifetime expired)
+					if nlAddr.PreferedLft == 0 {
+						debugLog.Printf("Skipping deprecated IPv6 address: %s\n", ip.String())
+						continue
+					}
+					addrs.IPV6 = append(addrs.IPV6, ip.String())
+					debugLog.Printf("Found IPv6 address from %s: %s (preferred_lft=%d)\n", ipv6Iface.Name, ip.String(), nlAddr.PreferedLft)
 				}
-			}
-
-			// Collect all non-temporary global unicast IPv6 addresses
-			for _, ip := range candidates {
-				ipStr := ip.String()
-				// Prefer addresses with :: compression (typically static configs)
-				// Skip temporary/privacy addresses (heuristic: longer addresses)
-				if len(ipStr) < 30 {
-					addrs.IPV6 = append(addrs.IPV6, ipStr)
-					debugLog.Printf("Found IPv6 address from %s: %s\n", ipv6Iface.Name, ipStr)
-				}
-			}
-
-			// If no short addresses found, use the first candidate
-			if len(addrs.IPV6) == 0 && len(candidates) > 0 {
-				addrs.IPV6 = append(addrs.IPV6, candidates[0].String())
-				debugLog.Printf("Using IPv6 address from %s: %s\n", ipv6Iface.Name, candidates[0].String())
 			}
 		}
 	}

@@ -78,31 +78,8 @@ func getDefaultInterfaceAddressesFallback() (IPAddrs, error) {
 						}
 
 						if ip.IsGlobalUnicast() {
-							ipStr := ip.String()
-							// Skip temporary/privacy addresses (heuristic: longer addresses)
-							if len(ipStr) < 30 {
-								addrs.IPV6 = append(addrs.IPV6, ipStr)
-								debugLog.Printf("Found IPv6 address: %s\n", ipStr)
-							}
-						}
-					}
-
-					// If no short addresses found, use first global unicast
-					if len(addrs.IPV6) == 0 {
-						for _, addr := range addrsList {
-							var ip net.IP
-							switch v := addr.(type) {
-							case *net.IPNet:
-								ip = v.IP
-							case *net.IPAddr:
-								ip = v.IP
-							}
-
-							if ip != nil && ip.To4() == nil && ip.IsGlobalUnicast() {
-								addrs.IPV6 = append(addrs.IPV6, ip.String())
-								debugLog.Printf("Using IPv6 address (fallback): %s\n", ip.String())
-								break
-							}
+							addrs.IPV6 = append(addrs.IPV6, ip.String())
+							debugLog.Printf("Found IPv6 address: %s\n", ip.String())
 						}
 					}
 					break

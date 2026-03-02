@@ -52,6 +52,7 @@ func main() {
 	debug := flag.Bool("debug", false, "Enable debug logging.")
 	outputFormat := flag.String("o", OutputPretty, "Output format: pretty (default), json, or yaml.")
 	showVersion := flag.Bool("version", false, "Show version and exit.")
+	autoUpdate := flag.Bool("auto-update", false, "Check for and install updates after execution.")
 
 	flag.Parse()
 
@@ -357,4 +358,9 @@ func main() {
 
 	// Print final output
 	PrintFinalOutput(output, *outputFormat)
+
+	// Self-update check (non-fatal)
+	if *autoUpdate {
+		selfUpdate(*outputFormat)
+	}
 }

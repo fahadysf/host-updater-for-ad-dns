@@ -25,4 +25,4 @@ release:
 	./build-release.sh
 
 clean:
-	rm -f $(BINARY_NAME) $(BINARY_NAME).exe $(BINARY_NAME)-linux $(BINARY_NAME)-darwin $(BINARY_NAME)-darwin-arm64
+	rm -f $(BINARY_NAME) $(BINARY_NAME).exe $(BINARY_NAME)-linux $(BINARY_NAME)-darwin $(BINARY_NAME)-darwin-arm64 checksums.txt
