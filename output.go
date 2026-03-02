@@ -351,8 +351,8 @@ func formatPrettySummary(output Output) string {
 	sb.WriteString(fmt.Sprintf("\033[1m%s Summary\033[0m\n", IconInfo))
 	sb.WriteString(fmt.Sprintf("  Host: %s\n", output.FQDN))
 	sb.WriteString(fmt.Sprintf("  IPv4: %s\n", output.SourceUPs.IPV4))
-	if output.SourceUPs.IPV6 != "" {
-		sb.WriteString(fmt.Sprintf("  IPv6: %s\n", output.SourceUPs.IPV6))
+	if len(output.SourceUPs.IPV6) > 0 {
+		sb.WriteString(fmt.Sprintf("  IPv6: %s\n", strings.Join(output.SourceUPs.IPV6, ", ")))
 	}
 	sb.WriteString("\n")
 
@@ -379,6 +379,14 @@ func formatPrettySummary(output Output) string {
 		for _, update := range result.AAAARecordUpdates {
 			icon := getStatusIcon(update.Status)
 			sb.WriteString(fmt.Sprintf("    %s %s: %s\n", icon, update.IP, update.Message))
+		}
+
+		if len(result.AAAARecordRemovals) > 0 {
+			sb.WriteString("  AAAA Removals:\n")
+			for _, removal := range result.AAAARecordRemovals {
+				icon := getStatusIcon(removal.Status)
+				sb.WriteString(fmt.Sprintf("    %s %s: %s\n", icon, removal.IP, removal.Message))
+			}
 		}
 
 		sb.WriteString("\n")

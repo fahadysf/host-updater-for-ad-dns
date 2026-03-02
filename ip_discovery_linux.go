@@ -100,22 +100,20 @@ func getDefaultInterfaceAddressesLinux() (IPAddrs, error) {
 				}
 			}
 
-			// Prefer non-temporary addresses (shorter, less random-looking)
-			// Temporary/privacy addresses are typically longer and more random
+			// Collect all non-temporary global unicast IPv6 addresses
 			for _, ip := range candidates {
 				ipStr := ip.String()
 				// Prefer addresses with :: compression (typically static configs)
-				// Avoid addresses with many hex digits (typically temporary)
-				if len(ipStr) < 30 { // Simple heuristic: shorter addresses are likely static
-					addrs.IPV6 = ipStr
-					debugLog.Printf("Using IPv6 address from %s: %s\n", ipv6Iface.Name, ipStr)
-					break
+				// Skip temporary/privacy addresses (heuristic: longer addresses)
+				if len(ipStr) < 30 {
+					addrs.IPV6 = append(addrs.IPV6, ipStr)
+					debugLog.Printf("Found IPv6 address from %s: %s\n", ipv6Iface.Name, ipStr)
 				}
 			}
 
-			// If no short address found, use the first candidate
-			if addrs.IPV6 == "" && len(candidates) > 0 {
-				addrs.IPV6 = candidates[0].String()
+			// If no short addresses found, use the first candidate
+			if len(addrs.IPV6) == 0 && len(candidates) > 0 {
+				addrs.IPV6 = append(addrs.IPV6, candidates[0].String())
 				debugLog.Printf("Using IPv6 address from %s: %s\n", ipv6Iface.Name, candidates[0].String())
 			}
 		}

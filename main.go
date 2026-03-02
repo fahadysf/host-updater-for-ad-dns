@@ -11,11 +11,12 @@ import (
 )
 
 type Result struct {
-	Server            string         `json:"server" yaml:"server"`
-	ARecordsFound     []string       `json:"a_records_found" yaml:"a_records_found"`
-	ARecordUpdates    []UpdateResult `json:"a_record_updates" yaml:"a_record_updates"`
-	AAAARecordsFound  []string       `json:"aaaa_records_found" yaml:"aaaa_records_found"`
-	AAAARecordUpdates []UpdateResult `json:"aaaa_record_updates" yaml:"aaaa_record_updates"`
+	Server             string         `json:"server" yaml:"server"`
+	ARecordsFound      []string       `json:"a_records_found" yaml:"a_records_found"`
+	ARecordUpdates     []UpdateResult `json:"a_record_updates" yaml:"a_record_updates"`
+	AAAARecordsFound   []string       `json:"aaaa_records_found" yaml:"aaaa_records_found"`
+	AAAARecordUpdates  []UpdateResult `json:"aaaa_record_updates" yaml:"aaaa_record_updates"`
+	AAAARecordRemovals []UpdateResult `json:"aaaa_record_removals,omitempty" yaml:"aaaa_record_removals,omitempty"`
 }
 
 type UpdateResult struct {
@@ -34,8 +35,8 @@ type Output struct {
 }
 
 type IPAddrs struct {
-	IPV4 string `json:"ipv4" yaml:"ipv4"`
-	IPV6 string `json:"ipv6" yaml:"ipv6"`
+	IPV4 string   `json:"ipv4" yaml:"ipv4"`
+	IPV6 []string `json:"ipv6" yaml:"ipv6"`
 }
 
 func main() {
@@ -47,11 +48,17 @@ func main() {
 	adUser := flag.String("ad-user", "", "Active Directory username for DNS update.")
 	adPassword := flag.String("ad-password", "", "Active Directory password for DNS update. If not provided, will be prompted.")
 	manualIP := flag.String("ip", "", "Manual IPv4 address to check/update. Skips IPv4 auto-detection.")
-	manualIPv6 := flag.String("ipv6", "", "Manual IPv6 address to check/update. Skips IPv6 auto-detection.")
+	manualIPv6 := flag.String("ipv6", "", "Comma-separated manual IPv6 addresses. Skips IPv6 auto-detection.")
 	debug := flag.Bool("debug", false, "Enable debug logging.")
 	outputFormat := flag.String("o", OutputPretty, "Output format: pretty (default), json, or yaml.")
+	showVersion := flag.Bool("version", false, "Show version and exit.")
 
 	flag.Parse()
+
+	if *showVersion {
+		fmt.Println(Version)
+		os.Exit(0)
+	}
 
 	// Validate output format
 	if *outputFormat != OutputPretty && *outputFormat != OutputJSON && *outputFormat != OutputYAML {
@@ -140,11 +147,16 @@ func main() {
 			sourceIPs.IPV4 = *manualIP
 		}
 		if *manualIPv6 != "" {
-			sourceIPs.IPV6 = *manualIPv6
+			for _, v6 := range strings.Split(*manualIPv6, ",") {
+				v6 = strings.TrimSpace(v6)
+				if v6 != "" {
+					sourceIPs.IPV6 = append(sourceIPs.IPV6, v6)
+				}
+			}
 		}
 
 		// Only auto-detect if not manually specified
-		if sourceIPs.IPV4 == "" || sourceIPs.IPV6 == "" {
+		if sourceIPs.IPV4 == "" || len(sourceIPs.IPV6) == 0 {
 			autoDetected, err := getDefaultInterfaceAddresses()
 			if err != nil && sourceIPs.IPV4 == "" {
 				progress.CompleteStep(stepDiscover, StepFailure, "failed", err.Error())
@@ -154,7 +166,7 @@ func main() {
 			if sourceIPs.IPV4 == "" {
 				sourceIPs.IPV4 = autoDetected.IPV4
 			}
-			if sourceIPs.IPV6 == "" {
+			if len(sourceIPs.IPV6) == 0 {
 				sourceIPs.IPV6 = autoDetected.IPV6
 			}
 		}
@@ -163,11 +175,11 @@ func main() {
 		if sourceIPs.IPV4 != "" {
 			ipInfo = sourceIPs.IPV4
 		}
-		if sourceIPs.IPV6 != "" {
+		for _, v6 := range sourceIPs.IPV6 {
 			if ipInfo != "" {
 				ipInfo += ", "
 			}
-			ipInfo += sourceIPs.IPV6
+			ipInfo += v6
 		}
 		progress.CompleteStep(stepDiscover, StepSuccess, "using manual IP", ipInfo)
 	} else {
@@ -179,8 +191,8 @@ func main() {
 			os.Exit(1)
 		}
 		ipInfo := sourceIPs.IPV4
-		if sourceIPs.IPV6 != "" {
-			ipInfo += ", " + sourceIPs.IPV6
+		for _, v6 := range sourceIPs.IPV6 {
+			ipInfo += ", " + v6
 		}
 		progress.CompleteStep(stepDiscover, StepSuccess, "found", ipInfo)
 	}
@@ -273,30 +285,57 @@ func main() {
 				result.ARecordUpdates = append(result.ARecordUpdates, UpdateResult{IP: sourceIPs.IPV4, Status: "skipped", Message: "Record already correct."})
 			}
 
-			// AAAA Record Update
-			if sourceIPs.IPV6 != "" {
-				aaaaFound := false
-				for _, r := range aaaaRecords {
-					if r == sourceIPs.IPV6 {
-						aaaaFound = true
-						break
+			// AAAA Record Updates - add missing and remove stale
+			if len(sourceIPs.IPV6) > 0 {
+				// Build a set of desired IPv6 addresses
+				desiredIPv6 := make(map[string]bool)
+				for _, v6 := range sourceIPs.IPV6 {
+					desiredIPv6[v6] = true
+				}
+
+				// Add missing AAAA records
+				for _, v6 := range sourceIPs.IPV6 {
+					found := false
+					for _, r := range aaaaRecords {
+						if r == v6 {
+							found = true
+							break
+						}
+					}
+					if !found {
+						updatesNeeded++
+						progress.StartStep(updateStep, fmt.Sprintf("adding AAAA record %s...", v6))
+						updateResult, err := updateWindowsDNSRecord(server, *adUser, *adPassword, *domain, *hostname, v6, "AAAA")
+						if err != nil {
+							debugLog.Printf("Error updating AAAA record on %s: %v\n", server, err)
+							updatesFailed++
+						} else if updateResult.Status == "success" || updateResult.Status == "updated" {
+							updatesSuccess++
+						} else {
+							updatesFailed++
+						}
+						result.AAAARecordUpdates = append(result.AAAARecordUpdates, updateResult)
+					} else {
+						result.AAAARecordUpdates = append(result.AAAARecordUpdates, UpdateResult{IP: v6, Status: "skipped", Message: "Record already correct."})
 					}
 				}
-				if !aaaaFound {
-					updatesNeeded++
-					progress.StartStep(updateStep, fmt.Sprintf("updating AAAA record to %s...", sourceIPs.IPV6))
-					updateResult, err := updateWindowsDNSRecord(server, *adUser, *adPassword, *domain, *hostname, sourceIPs.IPV6, "AAAA")
-					if err != nil {
-						debugLog.Printf("Error updating AAAA record on %s: %v\n", server, err)
-						updatesFailed++
-					} else if updateResult.Status == "success" || updateResult.Status == "updated" {
-						updatesSuccess++
-					} else {
-						updatesFailed++
+
+				// Remove stale AAAA records (in DNS but not on host)
+				for _, r := range aaaaRecords {
+					if !desiredIPv6[r] {
+						updatesNeeded++
+						progress.StartStep(updateStep, fmt.Sprintf("removing stale AAAA record %s...", r))
+						removeResult, err := removeWindowsDNSRecord(server, *adUser, *adPassword, *domain, *hostname, r, "AAAA")
+						if err != nil {
+							debugLog.Printf("Error removing stale AAAA record %s on %s: %v\n", r, server, err)
+							updatesFailed++
+						} else if removeResult.Status == "success" {
+							updatesSuccess++
+						} else {
+							updatesFailed++
+						}
+						result.AAAARecordRemovals = append(result.AAAARecordRemovals, removeResult)
 					}
-					result.AAAARecordUpdates = append(result.AAAARecordUpdates, updateResult)
-				} else {
-					result.AAAARecordUpdates = append(result.AAAARecordUpdates, UpdateResult{IP: sourceIPs.IPV6, Status: "skipped", Message: "Record already correct."})
 				}
 			}
 

@@ -31,7 +31,7 @@ func getDefaultInterfaceAddressesFallback() (IPAddrs, error) {
 		ipv6FromDial := localAddr.IP.String()
 		debugLog.Printf("Detected IPv6 via dial: %s\n", ipv6FromDial)
 
-		// Find the interface with this address
+		// Find the interface with this address and collect all global unicast IPv6
 		interfaces, err := net.Interfaces()
 		if err == nil {
 			for _, iface := range interfaces {
@@ -41,7 +41,6 @@ func getDefaultInterfaceAddressesFallback() (IPAddrs, error) {
 				}
 
 				hasDialedAddr := false
-				var candidates []net.IP
 
 				for _, addr := range addrsList {
 					var ip net.IP
@@ -58,29 +57,53 @@ func getDefaultInterfaceAddressesFallback() (IPAddrs, error) {
 
 					if ip.String() == ipv6FromDial {
 						hasDialedAddr = true
-					}
-
-					if ip.IsGlobalUnicast() {
-						candidates = append(candidates, ip)
+						break
 					}
 				}
 
-				// If this interface has the dialed address, choose the best IPv6 from it
+				// If this interface has the dialed address, collect all global unicast IPv6 from it
 				if hasDialedAddr {
 					debugLog.Printf("Found interface %s with dialed IPv6 address\n", iface.Name)
-					// Prefer shorter addresses (non-temporary)
-					for _, ip := range candidates {
-						ipStr := ip.String()
-						if len(ipStr) < 30 {
-							addrs.IPV6 = ipStr
-							debugLog.Printf("Using IPv6 address: %s\n", ipStr)
-							break
+					for _, addr := range addrsList {
+						var ip net.IP
+						switch v := addr.(type) {
+						case *net.IPNet:
+							ip = v.IP
+						case *net.IPAddr:
+							ip = v.IP
+						}
+
+						if ip == nil || ip.To4() != nil {
+							continue
+						}
+
+						if ip.IsGlobalUnicast() {
+							ipStr := ip.String()
+							// Skip temporary/privacy addresses (heuristic: longer addresses)
+							if len(ipStr) < 30 {
+								addrs.IPV6 = append(addrs.IPV6, ipStr)
+								debugLog.Printf("Found IPv6 address: %s\n", ipStr)
+							}
 						}
 					}
 
-					if addrs.IPV6 == "" && len(candidates) > 0 {
-						addrs.IPV6 = candidates[0].String()
-						debugLog.Printf("Using IPv6 address: %s\n", candidates[0].String())
+					// If no short addresses found, use first global unicast
+					if len(addrs.IPV6) == 0 {
+						for _, addr := range addrsList {
+							var ip net.IP
+							switch v := addr.(type) {
+							case *net.IPNet:
+								ip = v.IP
+							case *net.IPAddr:
+								ip = v.IP
+							}
+
+							if ip != nil && ip.To4() == nil && ip.IsGlobalUnicast() {
+								addrs.IPV6 = append(addrs.IPV6, ip.String())
+								debugLog.Printf("Using IPv6 address (fallback): %s\n", ip.String())
+								break
+							}
+						}
 					}
 					break
 				}

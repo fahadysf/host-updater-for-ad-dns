@@ -4,9 +4,10 @@
 
 Port the DNS updating functionality from Python to Go to create a cross-platform compatible binary that:
 
-1. Discovers local IPv4/IPv6 addresses from network interfaces
+1. Discovers local IPv4/IPv6 addresses from network interfaces (all global unicast IPv6)
 2. Queries specified DNS servers for A and AAAA records
 3. Updates Windows DNS records via WinRM when they don't match the local IP
+4. Removes stale AAAA records that no longer exist on the host
 
 ## Architecture
 
@@ -14,9 +15,11 @@ Port the DNS updating functionality from Python to Go to create a cross-platform
 main.go           - CLI entry point, argument parsing, orchestration
 dns.go            - DNS server liveness checks and record lookups
 ip_discovery.go   - Local network interface IP address discovery
-winrm.go          - Windows Remote Management for DNS record updates (Kerberos/HTTPS)
+winrm.go          - Windows Remote Management for DNS record updates/removals (Kerberos/HTTPS)
 logger.go         - Debug logging infrastructure
 output.go         - Interactive progress display and output formatting (pretty/json/yaml)
+version.go        - Build version (set via ldflags)
+Makefile          - Build targets with version embedding
 ```
 
 ## CLI Usage
@@ -43,8 +46,10 @@ output.go         - Interactive progress display and output formatting (pretty/j
 | `--ad-user` | AD username (UPN format: user@domain or DOMAIN\user) |
 | `--ad-password` | AD password (prompted if not provided) |
 | `--ip` | Manual IPv4 address (skips auto-detection) |
+| `--ipv6` | Comma-separated manual IPv6 addresses (skips IPv6 auto-detection) |
 | `-o` | Output format: `pretty` (default), `json`, or `yaml` |
 | `--debug` | Enable debug logging |
+| `--version` | Show version and exit |
 
 ### Output Formats
 
@@ -79,24 +84,29 @@ New-NetFirewallRule -DisplayName "WinRM HTTPS" -Direction Inbound -LocalPort 598
 ## Building
 
 ```bash
+# With version embedding (recommended)
+make build
+
+# Or manually
 go build -o dns-updater .
 ```
 
 ## Cross-Platform Compilation
 
 ```bash
-# Windows
-GOOS=windows GOARCH=amd64 go build -o dns-updater.exe .
+# All platforms at once
+make build-all
 
-# Linux
-GOOS=linux GOARCH=amd64 go build -o dns-updater-linux .
-
-# macOS (Intel)
-GOOS=darwin GOARCH=amd64 go build -o dns-updater-darwin .
-
-# macOS (Apple Silicon)
-GOOS=darwin GOARCH=arm64 go build -o dns-updater-darwin-arm64 .
+# Individual targets
+make build-windows
+make build-linux
+make build-darwin
+make build-darwin-arm64
 ```
+
+## Versioning
+
+Versions follow the format `YYYYmmdd.HHMM.<commit-id>` and are embedded at build time via ldflags. Use `make build` to automatically set the version. The `--version` flag displays the embedded version.
 
 ## Key Dependencies
 

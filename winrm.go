@@ -129,6 +129,140 @@ func updateWindowsDNSRecord(server, username, password, zone, name, ip, recordTy
 	return executeWinRMCommand(client, server, zone, name, ip, recordType)
 }
 
+func removeWindowsDNSRecord(server, username, password, zone, name, ip, recordType string) (UpdateResult, error) {
+	endpoint := winrm.NewEndpoint(server, 5985, false, true, nil, nil, nil, 0)
+
+	var user, realm string
+	if strings.Contains(username, "@") {
+		parts := strings.Split(username, "@")
+		user = parts[0]
+		realm = parts[1]
+	} else if strings.Contains(username, "\\") {
+		parts := strings.Split(username, "\\")
+		realm = parts[0]
+		user = parts[1]
+	} else {
+		user = username
+		realm = zone
+	}
+
+	krbPath, err := createKerberosConfig(realm, server)
+	if err != nil {
+		debugLog.Printf("Failed to create Kerberos config: %v, falling back to NTLM\n", err)
+		params := winrm.DefaultParameters
+		params.TransportDecorator = func() winrm.Transporter {
+			return &winrm.ClientNTLM{}
+		}
+		client, err := winrm.NewClientWithParameters(endpoint, username, password, params)
+		if err != nil {
+			return UpdateResult{Status: "error"}, err
+		}
+		return executeWinRMRemoveCommand(client, server, zone, name, ip, recordType)
+	}
+	defer os.Remove(krbPath)
+
+	debugLog.Printf("Using Kerberos authentication with realm %s for removal\n", strings.ToUpper(realm))
+
+	spnHost := server
+	if isIPAddress(server) {
+		names, err := net.LookupAddr(server)
+		if err == nil && len(names) > 0 {
+			spnHost = strings.TrimSuffix(names[0], ".")
+			debugLog.Printf("Resolved IP %s to hostname %s for SPN\n", server, spnHost)
+		}
+	}
+
+	spn := fmt.Sprintf("HTTP/%s", spnHost)
+	debugLog.Printf("Using SPN: %s\n", spn)
+
+	settings := &winrm.Settings{
+		WinRMUsername: user,
+		WinRMPassword: password,
+		WinRMHost:     spnHost,
+		WinRMPort:     5986,
+		WinRMProto:    "https",
+		WinRMInsecure: true,
+		KrbRealm:      strings.ToUpper(realm),
+		KrbConfig:     krbPath,
+		KrbSpn:        spn,
+	}
+
+	endpoint = winrm.NewEndpoint(spnHost, 5986, true, true, nil, nil, nil, 0)
+
+	params := winrm.DefaultParameters
+	params.TransportDecorator = func() winrm.Transporter {
+		return winrm.NewClientKerberos(settings)
+	}
+
+	client, err := winrm.NewClientWithParameters(endpoint, user, password, params)
+	if err != nil {
+		return UpdateResult{Status: "error"}, err
+	}
+
+	return executeWinRMRemoveCommand(client, server, zone, name, ip, recordType)
+}
+
+// executeWinRMRemoveCommand runs the PowerShell DNS record removal command
+func executeWinRMRemoveCommand(client *winrm.Client, server, zone, name, ip, recordType string) (UpdateResult, error) {
+	recordType = strings.ToUpper(recordType)
+	ipAddressProperty := "IPv4Address"
+	if recordType == "AAAA" {
+		ipAddressProperty = "IPv6Address"
+	}
+
+	psScript := fmt.Sprintf(`
+$ErrorActionPreference = "Stop"
+try {
+    $records = Get-DnsServerResourceRecord -ZoneName "%s" -Name "%s" -RRType %s -ErrorAction SilentlyContinue
+    $target = $records | Where-Object { $_.RecordData.%s -eq '%s' }
+    if ($target) {
+        Remove-DnsServerResourceRecord -ZoneName "%s" -InputObject $target -Force
+        Write-Host "Removed stale %s record for %s"
+    } else {
+        Write-Host "Record %s for %s not found, nothing to remove"
+    }
+} catch {
+    Write-Error $_.Exception.Message
+}`, zone, name, recordType, ipAddressProperty, ip, zone, recordType, ip, recordType, ip)
+
+	debugLog.Printf("Executing removal PowerShell script on %s:\n%s\n", server, psScript)
+
+	psCmd := winrm.Powershell(psScript)
+
+	var stdOut, stdErr bytes.Buffer
+	_, err := client.Run(psCmd, &stdOut, &stdErr)
+
+	debugLog.Printf("WinRM stdout:\n%s\n", stdOut.String())
+	debugLog.Printf("WinRM stderr:\n%s\n", stdErr.String())
+
+	stdOutStr := strings.TrimSpace(stdOut.String())
+	stdErrStr := strings.TrimSpace(stdErr.String())
+
+	if strings.Contains(stdOutStr, "Removed stale") {
+		return UpdateResult{IP: ip, Status: "success", Message: fmt.Sprintf("Removed stale %s record", recordType)}, nil
+	}
+	if strings.Contains(stdOutStr, "not found, nothing to remove") {
+		return UpdateResult{IP: ip, Status: "success", Message: "Record already absent"}, nil
+	}
+
+	if err != nil || stdErrStr != "" {
+		errMsg := "Failed to remove DNS record"
+		if stdErrStr != "" {
+			lines := strings.Split(stdErrStr, "\n")
+			for _, line := range lines {
+				line = strings.TrimSpace(line)
+				if line != "" && !strings.HasPrefix(line, "At line:") && !strings.HasPrefix(line, "+") && !strings.HasPrefix(line, "CategoryInfo") && !strings.HasPrefix(line, "FullyQualifiedErrorId") {
+					errMsg = line
+					break
+				}
+			}
+		}
+		return UpdateResult{IP: ip, Status: "error", Message: errMsg}, err
+	}
+
+	return UpdateResult{IP: ip, Status: "success", Message: "Record removed"}, nil
+}
+
 // executeWinRMCommand runs the PowerShell DNS update command
 func executeWinRMCommand(client *winrm.Client, server, zone, name, ip, recordType string) (UpdateResult, error) {
 	recordType = strings.ToUpper(recordType)
