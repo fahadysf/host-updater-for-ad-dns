@@ -89,9 +89,17 @@ func updateWindowsDNSRecord(server, username, password, zone, name, ip, recordTy
 	if isIPAddress(server) {
 		names, err := net.LookupAddr(server)
 		if err == nil && len(names) > 0 {
-			// Use the first name, removing trailing dot
 			spnHost = strings.TrimSuffix(names[0], ".")
-			debugLog.Printf("Resolved IP %s to hostname %s for SPN\n", server, spnHost)
+			debugLog.Printf("Resolved IP %s to hostname %s for SPN (system resolver)\n", server, spnHost)
+		} else {
+			// System resolver failed — try PTR lookup via the server itself
+			debugLog.Printf("System reverse DNS failed for %s, trying PTR lookup via server\n", server)
+			if hostname, err := reverseLookupViaServer(server, server); err == nil {
+				spnHost = hostname
+				debugLog.Printf("Resolved IP %s to hostname %s for SPN (direct PTR query)\n", server, spnHost)
+			} else {
+				debugLog.Printf("PTR lookup via server also failed for %s: %v\n", server, err)
+			}
 		}
 	}
 
@@ -168,7 +176,15 @@ func removeWindowsDNSRecord(server, username, password, zone, name, ip, recordTy
 		names, err := net.LookupAddr(server)
 		if err == nil && len(names) > 0 {
 			spnHost = strings.TrimSuffix(names[0], ".")
-			debugLog.Printf("Resolved IP %s to hostname %s for SPN\n", server, spnHost)
+			debugLog.Printf("Resolved IP %s to hostname %s for SPN (system resolver)\n", server, spnHost)
+		} else {
+			debugLog.Printf("System reverse DNS failed for %s, trying PTR lookup via server\n", server)
+			if hostname, err := reverseLookupViaServer(server, server); err == nil {
+				spnHost = hostname
+				debugLog.Printf("Resolved IP %s to hostname %s for SPN (direct PTR query)\n", server, spnHost)
+			} else {
+				debugLog.Printf("PTR lookup via server also failed for %s: %v\n", server, err)
+			}
 		}
 	}
 
@@ -324,7 +340,7 @@ try {
 
 	// If we found success indicators, return success regardless of stderr
 	if hasSuccessIndicator {
-		return UpdateResult{Status: "success", Message: message}, nil
+		return UpdateResult{IP: ip, Status: "success", Message: message}, nil
 	}
 
 	// If no success indicators, check for errors
@@ -342,9 +358,9 @@ try {
 				}
 			}
 		}
-		return UpdateResult{Status: "error", Message: errMsg}, err
+		return UpdateResult{IP: ip, Status: "error", Message: errMsg}, err
 	}
 
 	// Fallback for unexpected success case (no error, no known success message)
-	return UpdateResult{Status: "success", Message: "Record updated successfully"}, nil
+	return UpdateResult{IP: ip, Status: "success", Message: "Record updated successfully"}, nil
 }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"strings"
 	"time"
 
 	"github.com/miekg/dns"
@@ -86,4 +87,33 @@ func performDNSLookup(server, fqdn, recordType string) ([]string, error) {
 
 	debugLog.Printf("DNS lookup on server %s for %s (%s) returned: %v\n", server, fqdn, recordType, results)
 	return results, nil
+}
+
+// reverseLookupViaServer performs a PTR lookup for an IP address against a specific DNS server.
+// This is used when the system resolver can't resolve PTR records (e.g., on minimal Linux devices).
+func reverseLookupViaServer(ip, server string) (string, error) {
+	arpa, err := dns.ReverseAddr(ip)
+	if err != nil {
+		return "", fmt.Errorf("failed to build reverse address: %w", err)
+	}
+
+	m := new(dns.Msg)
+	m.SetQuestion(arpa, dns.TypePTR)
+	m.RecursionDesired = true
+
+	c := new(dns.Client)
+	c.Timeout = 3 * time.Second
+
+	r, _, err := c.Exchange(m, net.JoinHostPort(server, "53"))
+	if err != nil {
+		return "", err
+	}
+
+	for _, ans := range r.Answer {
+		if ptr, ok := ans.(*dns.PTR); ok {
+			hostname := strings.TrimSuffix(ptr.Ptr, ".")
+			return hostname, nil
+		}
+	}
+	return "", fmt.Errorf("no PTR record found for %s", ip)
 }

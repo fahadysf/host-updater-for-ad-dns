@@ -4,21 +4,12 @@ set -euo pipefail
 BINARY_NAME="dns-updater"
 VERSION="$(date -u +%Y%m%d.%H%M).$(git rev-parse --short HEAD)"
 LDFLAGS="-X main.Version=${VERSION}"
+OUT_DIR="dist/bin"
 
-echo "==> Building ${BINARY_NAME} v${VERSION}"
+echo "==> Building ${BINARY_NAME} v${VERSION} -> ${OUT_DIR}/"
 
-# Build all platform binaries using {name}-{GOOS}-{GOARCH} naming convention
-echo "  Building windows/amd64..."
-GOOS=windows GOARCH=amd64 go build -ldflags "${LDFLAGS}" -o "${BINARY_NAME}-windows-amd64.exe" .
-
-echo "  Building linux/amd64..."
-GOOS=linux GOARCH=amd64 go build -ldflags "${LDFLAGS}" -o "${BINARY_NAME}-linux-amd64" .
-
-echo "  Building darwin/amd64..."
-GOOS=darwin GOARCH=amd64 go build -ldflags "${LDFLAGS}" -o "${BINARY_NAME}-darwin-amd64" .
-
-echo "  Building darwin/arm64..."
-GOOS=darwin GOARCH=arm64 go build -ldflags "${LDFLAGS}" -o "${BINARY_NAME}-darwin-arm64" .
+# Build all targets via build.sh
+./build.sh
 
 echo "==> All binaries built successfully"
 
@@ -34,13 +25,13 @@ hash_file() {
     fi
 }
 
-rm -f checksums.txt
-echo "$(hash_file "${BINARY_NAME}-windows-amd64.exe")  ${BINARY_NAME}-windows-amd64.exe" >> checksums.txt
-echo "$(hash_file "${BINARY_NAME}-linux-amd64")  ${BINARY_NAME}-linux-amd64" >> checksums.txt
-echo "$(hash_file "${BINARY_NAME}-darwin-amd64")  ${BINARY_NAME}-darwin-amd64" >> checksums.txt
-echo "$(hash_file "${BINARY_NAME}-darwin-arm64")  ${BINARY_NAME}-darwin-arm64" >> checksums.txt
+rm -f "${OUT_DIR}/checksums.txt"
+for bin in "${OUT_DIR}/${BINARY_NAME}"-*; do
+    name="$(basename "$bin")"
+    echo "$(hash_file "$bin")  ${name}" >> "${OUT_DIR}/checksums.txt"
+done
 
-echo "==> Checksums written to checksums.txt"
+echo "==> Checksums written to ${OUT_DIR}/checksums.txt"
 
 # Check if gh CLI is available and authenticated
 if ! command -v gh &>/dev/null; then
@@ -63,13 +54,15 @@ else
     NOTES=$(git log --pretty=format:"- %s" -10)
 fi
 
+ASSETS=()
+for bin in "${OUT_DIR}/${BINARY_NAME}"-*; do
+    ASSETS+=("$bin")
+done
+ASSETS+=("${OUT_DIR}/checksums.txt#checksums.txt")
+
 gh release create "v${VERSION}" \
     --title "v${VERSION}" \
     --notes "${NOTES}" \
-    "${BINARY_NAME}-windows-amd64.exe" \
-    "${BINARY_NAME}-linux-amd64" \
-    "${BINARY_NAME}-darwin-amd64" \
-    "${BINARY_NAME}-darwin-arm64" \
-    "checksums.txt#checksums.txt"
+    "${ASSETS[@]}"
 
 echo "==> Release v${VERSION} published"

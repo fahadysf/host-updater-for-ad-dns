@@ -1,4 +1,5 @@
 # Binaries
+dist/
 dns-updater
 dns-updater-*
 test_*
